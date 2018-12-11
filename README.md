@@ -7,7 +7,13 @@ double8scan is a simple C hack that tries to detect the perforation on a scanned
 
 Because the strip may be stretched (or the scanner non-perfect) the frame size must be set by the user, but if no size is given the program will probe and display min, max and mean frame heights. It's probably best to use the minimum frame size, otherwise you will get too much border in the image. Once you've decided on a frame height, this program can batch convert the scanned strips.
 
-Link against the IJG JPEG library. The movie can then be assembled from the individual frames in various programs.
+Build using CMake, for instance:
+
+`mkdir build ; cd build ; cmake .. ; make`
+
+CMake will search for and link against libjpeg.
+
+The movie can then be assembled from the individual frames in various programs.
 
 Improvements that can be made:
 
