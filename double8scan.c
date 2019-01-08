@@ -54,7 +54,7 @@ int decompress(char *filename, RAWBUF_T *imgbuf);
 int find_perf(RAWBUF_T *imgbuf, int *offs, int verbose);
 int find_xstart(RAWBUF_T *imgbuf, int ypos, int verbose);
 int compress_frames(char *filename, RAWBUF_T *imgbuf, int imgheight,
-                    int imgwidth, int verbose);
+                    int imgwidth, int quality, int verbose);
 int rotate_strip(RAWBUF_T *imgbuf, int deg, int verbose);
 void free_buf(RAWBUF_T *imgbuf);
 
@@ -72,16 +72,39 @@ int perf_y_start = PERF_Y_START;
 
 int color_channel = CHAN_B;
 
+void usage(void) {
+  printf("usage: double8scan [options] <infile>\n");
+  printf("options:\n");
+  printf("       -v             : verbose (-vv for more, etc)\n");
+  printf("       -h <height>    : set frame height (needed for extraction)\n");
+  printf("       -w <width>     : set frame width (needed for extraction)\n");
+  printf("       -x <offs>      : x offset to start perf detection at\n");
+  printf("       -y <offs>      : y offset to start perf detection at\n");
+  printf(
+      "       -B <level>     : set black level 0-255 (for perf detection)\n");
+  printf(
+      "       -W <level>     : set white level 0-255 (for perf detection)\n");
+  printf("       -p <min>-<max> : set min/max values for perf height\n");
+  printf("       -f <min>-<max> : set min/max values for frame height\n");
+  printf("       -c <R|G|B|Y>   : color channel R, G, B or Y (default B)\n");
+  printf("       -r <deg>       : rotate strip degrees (default 0, -90 if "
+         "width > height)\n");
+  printf("       -q <quality>   : JPEG output quality (0-100), default = %d\n",
+         JPEG_QUALITY);
+  exit(1);
+}
+
 int main(int argc, char *argv[]) {
   RAWBUF_T imgbuf;
   int verbose = 0;
   int height = 0;
   int width = 0;
   int rotate = 0;
+  int quality = JPEG_QUALITY;
   int offs;
   char *file;
 
-  while ((optopt = getopt(argc, argv, "vh:w:W:B:p:f:c:x:y:r:")) != EOF) {
+  while ((optopt = getopt(argc, argv, "vh:w:W:B:p:f:c:x:y:r:q:")) != EOF) {
     switch (optopt) {
     case 'v':
       verbose++;
@@ -123,28 +146,16 @@ int main(int argc, char *argv[]) {
     case 'r':
       sscanf(optarg, "%d", &rotate);
       break;
+    case 'q':
+      sscanf(optarg, "%d", &quality);
+      if (quality < 0 || quality > 100)
+        usage();
+      break;
     }
   }
 
   if (optind == argc) {
-    printf("usage: double8scan [options] <infile>\n");
-    printf("options:\n");
-    printf("       -v             : verbose (-vv for more, etc)\n");
-    printf(
-        "       -h <height>    : set frame height (needed for extraction)\n");
-    printf("       -w <width>     : set frame width (needed for extraction)\n");
-    printf("       -x <offs>      : x offset to start perf detection at\n");
-    printf("       -y <offs>      : y offset to start perf detection at\n");
-    printf(
-        "       -B <level>     : set black level 0-255 (for perf detection)\n");
-    printf(
-        "       -W <level>     : set white level 0-255 (for perf detection)\n");
-    printf("       -p <min>-<max> : set min/max values for perf height\n");
-    printf("       -f <min>-<max> : set min/max values for frame height\n");
-    printf("       -c <R|G|B|Y>   : color channel R, G, B or Y (default B)\n");
-    printf("       -r <deg>       : rotate strip degrees (default 0, -90 if "
-           "width > height)\n");
-    exit(1);
+    usage();
   }
 
   file = argv[optind];
@@ -195,7 +206,7 @@ int main(int argc, char *argv[]) {
 
   printf("frame height %d width %d, offset %d\n", height, width, offs);
 
-  compress_frames(file, &imgbuf, height, width, verbose);
+  compress_frames(file, &imgbuf, height, width, quality, verbose);
 
   free_buf(&imgbuf);
 
@@ -254,7 +265,7 @@ int decompress(char *filename, RAWBUF_T *imgbuf) {
 }
 
 int compress_frames(char *filename, RAWBUF_T *buf, int height, int width,
-                    int verbose) {
+                    int quality, int verbose) {
   struct jpeg_compress_struct cinfo;
   struct jpeg_error_mgr jerr;
   FILE *outfile;
@@ -279,7 +290,7 @@ int compress_frames(char *filename, RAWBUF_T *buf, int height, int width,
     cinfo.in_color_space = JCS_RGB;
 
   jpeg_set_defaults(&cinfo);
-  jpeg_set_quality(&cinfo, JPEG_QUALITY, 0);
+  jpeg_set_quality(&cinfo, quality, 0);
 
   while (1) {
     /* find next frame start */
