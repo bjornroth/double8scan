@@ -13,7 +13,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef WIN32
+#include <getopt.h>
+#else
 #include <unistd.h>
+#endif
 #include <jpeglib.h>
 #include <limits.h>
 #include <math.h>
