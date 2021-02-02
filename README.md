@@ -14,7 +14,7 @@ Build using CMake, for instance:
 
 `mkdir build ; cd build ; cmake .. ; make`
 
-CMake will search for and link against libjpeg.
+[libjpeg-turbo](https://github.com/libjpeg-turbo/libjpeg-turbo/) is included as a submodule and is built and linked to. Also, on Windows a [getopt substitute](https://github.com/Chunde/getopt-for-windows/) is built automatically.
 
 The movie can then be assembled from the individual frames in various programs. For instance, with [ffmeg](https://trac.ffmpeg.org/wiki/Slideshow) it can be as easy as:
 
