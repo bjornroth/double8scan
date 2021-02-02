@@ -1,0 +1,3 @@
+[submodule "third_party/getopt-for-windows"]
+	path = third_party/getopt-for-windows
+	url = https://github.com/Chunde/getopt-for-windows.git
