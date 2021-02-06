@@ -25,6 +25,8 @@
 
 typedef enum { CHAN_R, CHAN_G, CHAN_B, CHAN_Y } CHAN_T;
 
+typedef enum { DOUBLE_8, SUPER_8 } TYPE_T;
+
 typedef struct {
   int width;
   int height;
@@ -38,26 +40,25 @@ typedef struct {
 #define WHITELEVEL 0xe0
 #define BLACKLEVEL 0xc0
 
-#define PERF_X_START 10
 #define PERF_Y_START 40
 
 #define MAX_PERFDIFF 20
 #define MIN_PERF_HEIGHT_FAC 0.05
 #define MAX_PERF_HEIGHT_FAC 0.4
-#define MIN_FRAME_HEIGHT_FAC 0.3
+#define MIN_FRAME_HEIGHT_FAC 0.1
 #define MAX_FRAME_HEIGHT_FAC 0.8
 #define FRAME_FRAC_WITH_PERF 0.5
 #define PERF_OK_COUNT 5
 #define MAX_FRAMEDIFF 30
 
-#define FRAME_X_NEG_OFFS 20
+#define FRAME_X_NEG_OFFS_FAC 0.05
 
 #define JPEG_QUALITY 80
 
 /* prototypes */
 int decompress(char *filename, RAWBUF_T *imgbuf);
-int find_perf(RAWBUF_T *imgbuf, int *offs, int verbose);
-int find_xstart(RAWBUF_T *imgbuf, int ypos, int verbose);
+int find_perf(RAWBUF_T *imgbuf, int *y_offs_to_first_frame, int *perf_detect_x, int verbose);
+int find_xstart(RAWBUF_T *imgbuf, int xpos, int ypos, int frame_height, int verbose);
 int compress_frames(char *filename, RAWBUF_T *imgbuf, int imgheight,
                     int imgwidth, int quality, int verbose);
 int rotate_strip(RAWBUF_T *imgbuf, int deg, int verbose);
@@ -72,18 +73,18 @@ int max_perf_height;
 int min_frame_height;
 int max_frame_height;
 
-int perf_x_start = PERF_X_START;
 int perf_y_start = PERF_Y_START;
 
 int color_channel = CHAN_Y;
+TYPE_T film_type = DOUBLE_8;
 
 void usage(void) {
   printf("usage: double8scan [options] <infile>\n");
   printf("options:\n");
   printf("       -v             : verbose (-vv for more, etc)\n");
   printf("       -h <height>    : set frame height (needed for extraction)\n");
-  printf("       -w <width>     : set frame width (needed for extraction)\n");
-  printf("       -x <offs>      : x offset to start perf detection at\n");
+  printf("       -w <width>     : set frame width\n");
+  printf("       -X <offs>      : set frame X start offset\n");
   printf("       -y <offs>      : y offset to start perf detection at\n");
   printf("       -B <level>     : set black level 0-255 (for perf detection)\n");
   printf("       -W <level>     : set white level 0-255 (for perf detection)\n");
@@ -91,6 +92,7 @@ void usage(void) {
   printf("       -f <min>-<max> : set min/max values for frame height\n");
   printf("       -c <R|G|B|Y>   : color channel R, G, B or Y (default B)\n");
   printf("       -r <deg>       : rotate strip degrees (default 0, -90 if width > height)\n");
+  printf("       -t <D|S>       : film type: D = double 8, S = super 8\n");
   printf("       -q <quality>   : JPEG output quality (0-100), default = %d\n", JPEG_QUALITY);
   exit(1);
 }
@@ -103,9 +105,12 @@ int main(int argc, char *argv[]) {
   int rotate = 0;
   int quality = JPEG_QUALITY;
   int offs;
+  int perf_detect_x;
+  int max_x_offs = 0;
+  int frame_x_offset = -1;
   char *file;
 
-  while ((optopt = getopt(argc, argv, "vh:w:W:B:p:f:c:x:y:r:q:")) != EOF) {
+  while ((optopt = getopt(argc, argv, "vh:w:W:X:B:p:f:c:x:y:r:t:q:")) != EOF) {
     switch (optopt) {
     case 'v':
       verbose++;
@@ -118,6 +123,9 @@ int main(int argc, char *argv[]) {
       break;
     case 'W':
       sscanf(optarg, "%d", &white_level);
+      break;
+    case 'X':
+      sscanf(optarg, "%d", &frame_x_offset);
       break;
     case 'B':
       sscanf(optarg, "%d", &black_level);
@@ -138,11 +146,14 @@ int main(int argc, char *argv[]) {
       else if (strcmp(optarg, "Y") == 0)
         color_channel = CHAN_Y;
       break;
-    case 'x':
-      sscanf(optarg, "%d", &perf_x_start);
-      break;
     case 'y':
       sscanf(optarg, "%d", &perf_y_start);
+      break;
+    case 't':
+      if (strcmp(optarg, "D") == 0)
+        film_type = DOUBLE_8;
+      else if (strcmp(optarg, "S") == 0)
+        film_type = SUPER_8;
       break;
     case 'r':
       sscanf(optarg, "%d", &rotate);
@@ -166,7 +177,7 @@ int main(int argc, char *argv[]) {
 
   file = argv[optind];
 
-  printf("double8scan reading file %s\n", file);
+  printf("double8scan reading file %s type %s\n", file, film_type == DOUBLE_8 ? "double 8" : "super 8");
 
   if (height == 0)
     printf("no frame height given, only probing\n");
@@ -201,20 +212,41 @@ int main(int argc, char *argv[]) {
   if (!max_perf_height) max_perf_height = imgbuf.width * MAX_PERF_HEIGHT_FAC;
   if (!min_frame_height) min_frame_height = imgbuf.width * MIN_FRAME_HEIGHT_FAC;
   if (!max_frame_height) max_frame_height = imgbuf.width * MAX_FRAME_HEIGHT_FAC;
-  if (!width) width = imgbuf.width;
 
   printf(" black %d white %d perf %d-%d frame %d-%d\n", black_level,
          white_level, min_perf_height, max_perf_height, min_frame_height,
          max_frame_height);
 
-  find_perf(&imgbuf, &offs, verbose);
+  find_perf(&imgbuf, &offs, &perf_detect_x, verbose);
 
-  if (!height || !width)
+  if (!height)
     return 1;
 
-  /* check if a whole frame is above first complete perf */
-  if (offs > height)
-    find_xstart(&imgbuf, offs - height, verbose);
+  if (film_type == DOUBLE_8) {
+    /* check if a whole frame is above first complete perf */
+    if (offs > height)
+      find_xstart(&imgbuf, perf_detect_x, offs - height, height, verbose);
+  }
+
+  if (frame_x_offset >= 0) {
+    /* Replace auto-detected frame X start with custom value */
+    for (int i = 0; i < imgbuf.height; i++) {
+      if (imgbuf.scanstart[i] > 0) imgbuf.scanstart[i] = frame_x_offset;
+    }
+  }
+
+  /* find max X offset if using auto-width */
+  for (int i = 0; i < imgbuf.height; i++) {
+    if (imgbuf.scanstart[i] > max_x_offs)
+      max_x_offs = imgbuf.scanstart[i];
+  }
+
+  if (!width) {
+    width = imgbuf.width - max_x_offs;
+  } else {
+    if (width > imgbuf.width - max_x_offs)
+      width = imgbuf.width - max_x_offs;
+  }
 
   printf("using frame height %d width %d, offset %d\n", height, width, offs);
 
@@ -337,13 +369,15 @@ int compress_frames(char *filename, RAWBUF_T *buf, int height, int width,
       fprintf(stderr, "can't open %s\n", chunkname);
       exit(1);
     }
-    jpeg_stdio_dest(&cinfo, outfile);
 
+    jpeg_stdio_dest(&cinfo, outfile);
     jpeg_start_compress(&cinfo, TRUE);
 
     while (cinfo.next_scanline < cinfo.image_height) {
-      buf->scanline[y] += scan_start * buf->components;
-      jpeg_write_scanlines(&cinfo, &(buf->scanline[y++]), 1);
+      JSAMPROW row = buf->scanline[y];
+      row += scan_start * buf->components;
+      jpeg_write_scanlines(&cinfo, &row, 1);
+      y++;
     }
 
     jpeg_finish_compress(&cinfo);
@@ -360,7 +394,7 @@ int compress_frames(char *filename, RAWBUF_T *buf, int height, int width,
   return 0;
 }
 
-int find_perf_with_range(RAWBUF_T *buf, int *offs, int *total_num_perf,
+int find_perf_with_range(RAWBUF_T *buf, int *y_offs_to_first_frame, int *total_num_perf,
                          int *total_num_frames, int *x_for_max_frames,
                          int *median_frame_height, int from_x, int to_x,
                          int verbose) {
@@ -473,8 +507,10 @@ int find_perf_with_range(RAWBUF_T *buf, int *offs, int *total_num_perf,
               num_frames++;
             }
 
-            /* mark frame start in middle of perf */
-            find_xstart(buf, y - perfheight / 2, verbose);
+            /* mark frame start from middle of perf (depending on D8 or S8) */
+            find_xstart(buf, x / buf->components, y - perfheight / 2,
+                        *median_frame_height ? *median_frame_height : imgheight,
+                        verbose);
           } else if (verbose > 1) {
             printf(" [rej]");
           }
@@ -526,7 +562,7 @@ int find_perf_with_range(RAWBUF_T *buf, int *offs, int *total_num_perf,
     x += buf->components;
   }
 
-  *offs = roundf(mean_offs_sum / (float)okcount);
+  *y_offs_to_first_frame = roundf(mean_offs_sum / (float)okcount);
 
   for (int i = 0; i < max_frame_height; i++) {
     if (frame_height_hist[i] > median_frame_hist) {
@@ -538,38 +574,41 @@ int find_perf_with_range(RAWBUF_T *buf, int *offs, int *total_num_perf,
   return 0;
 }
 
-int find_perf(RAWBUF_T *buf, int *offs, int verbose) {
+int find_perf(RAWBUF_T *buf, int *y_offs_to_first_frame, int *perf_detect_x, int verbose) {
   int total_num_perf = 0;
   int total_num_frames = 0;
   int x_for_max_frames = 0;
   int median_frame_height = 0;
 
   /* First evalutate perfs for the whole range of x columns */
-  find_perf_with_range(buf, offs, &total_num_perf, &total_num_frames,
+  find_perf_with_range(buf, y_offs_to_first_frame, &total_num_perf, &total_num_frames,
                        &x_for_max_frames, &median_frame_height, 0,
                        FRAME_FRAC_WITH_PERF * buf->width, verbose);
 
-  printf("global: num perfs: %d num frames: %d (at x = %d), offs to first: %d, median height: %d\n",
-         total_num_perf, total_num_frames, x_for_max_frames, *offs,
+  printf("global: num perfs: %d num frames: %d (at x = %d) median height: %d\n",
+         total_num_perf, total_num_frames, x_for_max_frames,
          median_frame_height);
 
   /* Use the optimal X to index the frame starts */
-  find_perf_with_range(buf, offs, &total_num_perf, &total_num_frames,
+  find_perf_with_range(buf, y_offs_to_first_frame, &total_num_perf, &total_num_frames,
                        &x_for_max_frames, &median_frame_height, x_for_max_frames,
                        x_for_max_frames + 1, verbose);
 
   printf("x = %d: num perfs: %d num frames: %d , offs to first: %d, median height: %d\n",
-         x_for_max_frames, total_num_perf, total_num_frames, *offs, median_frame_height);
+         x_for_max_frames, total_num_perf, total_num_frames, *y_offs_to_first_frame, median_frame_height);
+
+  *perf_detect_x = x_for_max_frames;
 
   return 0;
 }
 
-int find_xstart(RAWBUF_T *buf, int ypos, int verbose) {
-  int xpos = perf_x_start;
+int find_xstart(RAWBUF_T *buf, int xpos, int ypos, int frame_height, int verbose) {
   int xoffs;
   int found_perf_start = 0;
   int found_perf_end = 0;
   int val;
+  int frame_start_ypos = ypos;
+  int frame_x_neg_offs = FRAME_X_NEG_OFFS_FAC * buf->width;
 
   if (color_channel == CHAN_Y)
     xoffs = 0;
@@ -593,10 +632,20 @@ int find_xstart(RAWBUF_T *buf, int ypos, int verbose) {
       xpos++;
   }
 
-  if (found_perf_end > FRAME_X_NEG_OFFS)
-    buf->scanstart[ypos] = found_perf_end - FRAME_X_NEG_OFFS;
-  else
-    buf->scanstart[ypos] = 1;
+  if (film_type == SUPER_8) {
+    /* Super 8 frame starts half a frame above center of perf */
+    frame_start_ypos -= frame_height/2;
+    if (frame_start_ypos < 0)
+      return 0;
+  }
+
+  if (found_perf_end &&
+      (found_perf_end - found_perf_start) > frame_height / 10 &&
+      found_perf_end > frame_x_neg_offs) {
+    buf->scanstart[frame_start_ypos] = found_perf_end - frame_x_neg_offs;
+  } else {
+    buf->scanstart[frame_start_ypos] = 1;
+  }
 
   return found_perf_end;
 }
