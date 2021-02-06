@@ -2,7 +2,7 @@
  *
  *  double8scan.c
  *
- *  (C) 2004-2018 Bjorn Roth, Infundo
+ *  (C) 2004-2021 Bjorn Roth, Infundo
  *
  *
  *
@@ -42,10 +42,11 @@ typedef struct {
 #define PERF_Y_START 40
 
 #define MAX_PERFDIFF 20
-#define MIN_PERF 30
-#define MAX_PERF 200
-#define MIN_FRAME 200
-#define MAX_FRAME 600
+#define MIN_PERF_HEIGHT_FAC 0.05
+#define MAX_PERF_HEIGHT_FAC 0.4
+#define MIN_FRAME_HEIGHT_FAC 0.3
+#define MAX_FRAME_HEIGHT_FAC 0.8
+#define FRAME_FRAC_WITH_PERF 0.5
 #define PERF_OK_COUNT 5
 #define MAX_FRAMEDIFF 30
 
@@ -66,15 +67,15 @@ void free_buf(RAWBUF_T *imgbuf);
 int white_level = WHITELEVEL;
 int black_level = BLACKLEVEL;
 
-int min_perf_height = MIN_PERF;
-int max_perf_height = MAX_PERF;
-int min_frame_height = MIN_FRAME;
-int max_frame_height = MAX_FRAME;
+int min_perf_height;
+int max_perf_height;
+int min_frame_height;
+int max_frame_height;
 
 int perf_x_start = PERF_X_START;
 int perf_y_start = PERF_Y_START;
 
-int color_channel = CHAN_B;
+int color_channel = CHAN_Y;
 
 void usage(void) {
   printf("usage: double8scan [options] <infile>\n");
@@ -84,17 +85,13 @@ void usage(void) {
   printf("       -w <width>     : set frame width (needed for extraction)\n");
   printf("       -x <offs>      : x offset to start perf detection at\n");
   printf("       -y <offs>      : y offset to start perf detection at\n");
-  printf(
-      "       -B <level>     : set black level 0-255 (for perf detection)\n");
-  printf(
-      "       -W <level>     : set white level 0-255 (for perf detection)\n");
+  printf("       -B <level>     : set black level 0-255 (for perf detection)\n");
+  printf("       -W <level>     : set white level 0-255 (for perf detection)\n");
   printf("       -p <min>-<max> : set min/max values for perf height\n");
   printf("       -f <min>-<max> : set min/max values for frame height\n");
   printf("       -c <R|G|B|Y>   : color channel R, G, B or Y (default B)\n");
-  printf("       -r <deg>       : rotate strip degrees (default 0, -90 if "
-         "width > height)\n");
-  printf("       -q <quality>   : JPEG output quality (0-100), default = %d\n",
-         JPEG_QUALITY);
+  printf("       -r <deg>       : rotate strip degrees (default 0, -90 if width > height)\n");
+  printf("       -q <quality>   : JPEG output quality (0-100), default = %d\n", JPEG_QUALITY);
   exit(1);
 }
 
@@ -155,19 +152,24 @@ int main(int argc, char *argv[]) {
       if (quality < 0 || quality > 100)
         usage();
       break;
+    case '?':
+    default:
+      usage();
+      return -1;
     }
   }
 
   if (optind == argc) {
     usage();
+    return -1;
   }
 
   file = argv[optind];
 
   printf("double8scan reading file %s\n", file);
 
-  if (height == 0 || width == 0)
-    printf("no frame height/width given, only probing\n");
+  if (height == 0)
+    printf("no frame height given, only probing\n");
 
   imgbuf.scanline = NULL;
   imgbuf.scanstart = NULL;
@@ -195,6 +197,12 @@ int main(int argc, char *argv[]) {
   else
     printf("?");
 
+  if (!min_perf_height) min_perf_height = imgbuf.width * MIN_PERF_HEIGHT_FAC;
+  if (!max_perf_height) max_perf_height = imgbuf.width * MAX_PERF_HEIGHT_FAC;
+  if (!min_frame_height) min_frame_height = imgbuf.width * MIN_FRAME_HEIGHT_FAC;
+  if (!max_frame_height) max_frame_height = imgbuf.width * MAX_FRAME_HEIGHT_FAC;
+  if (!width) width = imgbuf.width;
+
   printf(" black %d white %d perf %d-%d frame %d-%d\n", black_level,
          white_level, min_perf_height, max_perf_height, min_frame_height,
          max_frame_height);
@@ -208,7 +216,7 @@ int main(int argc, char *argv[]) {
   if (offs > height)
     find_xstart(&imgbuf, offs - height, verbose);
 
-  printf("frame height %d width %d, offset %d\n", height, width, offs);
+  printf("using frame height %d width %d, offset %d\n", height, width, offs);
 
   compress_frames(file, &imgbuf, height, width, quality, verbose);
 
@@ -304,8 +312,11 @@ int compress_frames(char *filename, RAWBUF_T *buf, int height, int width,
       y++;
 
     /* check that a whole frame exists after this FRAME_START */
-    if ((y == buf->height) || (y + height >= buf->height))
+    if ((y == buf->height) || (y + height >= buf->height)) {
+      if (verbose)
+        printf("y %d height %d tot height %d -> stopping", y, height, buf->height);
       break;
+    }
 
     /* store last frame start */
     last_frame_start = y;
@@ -349,65 +360,48 @@ int compress_frames(char *filename, RAWBUF_T *buf, int height, int width,
   return 0;
 }
 
-int find_perf(RAWBUF_T *buf, int *offs, int verbose) {
-  int perfstart;
-  int perfend;
-
-  int firststart;
-  int firstend;
-  int firstframe;
-
-  int perfheight;
-  int num_perf;
-  int num_frames;
-
-  int perfheightsum;
-  int in_perf;
-  int perf_detected;
-
-  int maxperf;
-  int minperf;
-  int perfdiff;
-
-  int maxframe;
-  int minframe;
-  int framediff;
-
-  int imgheight;
-  int imgheightsum;
+int find_perf_with_range(RAWBUF_T *buf, int *offs, int *total_num_perf,
+                         int *total_num_frames, int *x_for_max_frames,
+                         int *median_frame_height, int from_x, int to_x,
+                         int verbose) {
+  int frame_height_hist[max_frame_height];
 
   float mean_img_height_sum = 0.0;
   float mean_img_max_height_sum = 0.0;
   float mean_img_min_height_sum = 0.0;
   float mean_offs_sum = 0.0;
 
+  int median_frame_hist = 0;
+
   int okcount = 0;
 
   int y;
-  int x = perf_x_start * buf->components;
+  int x = from_x * buf->components;
   int xoffs;
   int val;
 
-  while ((okcount < PERF_OK_COUNT) && (x < buf->width * buf->components)) {
-    perfstart = 0;
-    perfend = 0;
-    firststart = 0;
-    firstend = 0;
-    firstframe = 0;
-    perfheight = 0;
-    num_perf = 0;
-    num_frames = 0;
-    perfheightsum = 0;
-    in_perf = 0;
-    perf_detected = 0;
-    maxperf = 0;
-    minperf = INT_MAX;
-    perfdiff = INT_MAX;
-    maxframe = 0;
-    minframe = INT_MAX;
-    framediff = INT_MAX;
-    imgheight = 0;
-    imgheightsum = 0;
+  memset(frame_height_hist, 0, sizeof(frame_height_hist));
+
+  while (x < to_x * buf->components) {
+    int perfstart = 0;
+    int perfend = 0;
+    int firststart = 0;
+    int firstend = 0;
+    int firstframe = 0;
+    int perfheight = 0;
+    int num_perf = 0;
+    int num_frames = 0;
+    int perfheightsum = 0;
+    int in_perf = 0;
+    int perf_detected = 0;
+    int maxperf = 0;
+    int minperf = INT_MAX;
+    int perfdiff = INT_MAX;
+    int maxframe = 0;
+    int minframe = INT_MAX;
+    int framediff = INT_MAX;
+    int imgheight = 0;
+    int imgheightsum = 0;
 
     memset(buf->scanstart, 0, buf->height * sizeof(int));
 
@@ -469,6 +463,8 @@ int find_perf(RAWBUF_T *buf, int *offs, int verbose) {
             if (firstframe) {
               imgheightsum += imgheight;
 
+              frame_height_hist[imgheight]++;
+
               if (imgheight > maxframe)
                 maxframe = imgheight;
               if (imgheight < minframe)
@@ -495,7 +491,7 @@ int find_perf(RAWBUF_T *buf, int *offs, int verbose) {
     if (maxframe >= minframe)
       framediff = maxframe - minframe;
 
-    if (verbose > 1) {
+    if (verbose > 1 && maxframe > 0) {
       printf("\nx = %d, perf: max %d min %d\n", x / buf->components, maxperf,
              minperf);
       printf("        frame: max %d min %d\n", maxframe, minframe);
@@ -519,19 +515,51 @@ int find_perf(RAWBUF_T *buf, int *offs, int verbose) {
       mean_img_max_height_sum += maxframe;
       mean_img_min_height_sum += minframe;
       mean_offs_sum += firststart + perfheightsum / (2.0 * num_frames);
+
+      if (num_perf > *total_num_perf) *total_num_perf = num_perf;
+      if (num_frames > *total_num_frames) {
+        *total_num_frames = num_frames;
+        *x_for_max_frames = x/buf->components;
+      }
     }
 
     x += buf->components;
   }
 
-  imgheight = roundf(mean_img_height_sum / (float)okcount);
-  maxframe = roundf(mean_img_max_height_sum / (float)okcount);
-  minframe = roundf(mean_img_min_height_sum / (float)okcount);
   *offs = roundf(mean_offs_sum / (float)okcount);
 
-  printf("\nglobal: num perfs: %d num frames: %d\n", num_perf, num_frames);
-  printf("        frame height: max %d min %d mean %d\n", maxframe, minframe,
-         imgheight);
+  for (int i = 0; i < max_frame_height; i++) {
+    if (frame_height_hist[i] > median_frame_hist) {
+      median_frame_hist = frame_height_hist[i];
+      *median_frame_height = i;
+    }
+  }
+
+  return 0;
+}
+
+int find_perf(RAWBUF_T *buf, int *offs, int verbose) {
+  int total_num_perf = 0;
+  int total_num_frames = 0;
+  int x_for_max_frames = 0;
+  int median_frame_height = 0;
+
+  /* First evalutate perfs for the whole range of x columns */
+  find_perf_with_range(buf, offs, &total_num_perf, &total_num_frames,
+                       &x_for_max_frames, &median_frame_height, 0,
+                       FRAME_FRAC_WITH_PERF * buf->width, verbose);
+
+  printf("global: num perfs: %d num frames: %d (at x = %d), offs to first: %d, median height: %d\n",
+         total_num_perf, total_num_frames, x_for_max_frames, *offs,
+         median_frame_height);
+
+  /* Use the optimal X to index the frame starts */
+  find_perf_with_range(buf, offs, &total_num_perf, &total_num_frames,
+                       &x_for_max_frames, &median_frame_height, x_for_max_frames,
+                       x_for_max_frames + 1, verbose);
+
+  printf("x = %d: num perfs: %d num frames: %d , offs to first: %d, median height: %d\n",
+         x_for_max_frames, total_num_perf, total_num_frames, *offs, median_frame_height);
 
   return 0;
 }
