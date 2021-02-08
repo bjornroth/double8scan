@@ -36,7 +36,7 @@ typedef struct {
   JSAMPLE *buffer;
 } RAWBUF_T;
 
-#define DOUBLE8SCAN_VERSION "0.5"
+#define DOUBLE8SCAN_VERSION "0.5.1"
 
 /* default defines */
 #define WHITELEVEL 0xe0
@@ -60,7 +60,8 @@ typedef struct {
 
 /* prototypes */
 int decompress(char *filename, RAWBUF_T *imgbuf);
-int find_perf(RAWBUF_T *imgbuf, int *y_offs_to_first_frame, int *perf_detect_x, int verbose);
+int find_perf(RAWBUF_T *imgbuf, int *median_height, int *y_offs_to_first_frame,
+              int *perf_detect_x, int verbose);
 int find_xstart(RAWBUF_T *imgbuf, int xpos, int ypos, int frame_height, int verbose);
 int compress_frames(char *filename, RAWBUF_T *imgbuf, int imgheight,
                     int imgwidth, int quality, int verbose);
@@ -112,6 +113,7 @@ int main(int argc, char *argv[]) {
   int perf_detect_x;
   int max_x_offs = 0;
   int frame_x_offset = -1;
+  int median_height;
   char *file;
 
   while ((optopt = getopt(argc, argv, "vh:w:W:X:B:p:f:c:x:y:r:t:q:")) != EOF) {
@@ -221,10 +223,10 @@ int main(int argc, char *argv[]) {
          white_level, min_perf_height, max_perf_height, min_frame_height,
          max_frame_height);
 
-  find_perf(&imgbuf, &offs, &perf_detect_x, verbose);
+  find_perf(&imgbuf, &median_height, &offs, &perf_detect_x, verbose);
 
   if (!height)
-    return 1;
+    height = median_height;
 
   if (film_type == DOUBLE_8) {
     /* check if a whole frame is above first complete perf */
@@ -409,10 +411,10 @@ int compress_frames(char *filename, RAWBUF_T *buf, int height, int width,
   return 0;
 }
 
-int find_perf_with_range(RAWBUF_T *buf, int *y_offs_to_first_frame, int *total_num_perf,
-                         int *total_num_frames, int *x_for_max_frames,
-                         int *median_frame_height, int from_x, int to_x,
-                         int verbose) {
+int find_perf_with_range(RAWBUF_T *buf, int *y_offs_to_first_frame,
+                         int *total_num_perf, int *total_num_frames,
+                         int *x_for_max_frames, int *median_frame_height,
+                         int from_x, int to_x, int verbose) {
   int frame_height_hist[max_frame_height];
 
   float mean_img_height_sum = 0.0;
@@ -589,7 +591,8 @@ int find_perf_with_range(RAWBUF_T *buf, int *y_offs_to_first_frame, int *total_n
   return 0;
 }
 
-int find_perf(RAWBUF_T *buf, int *y_offs_to_first_frame, int *perf_detect_x, int verbose) {
+int find_perf(RAWBUF_T *buf, int *median_height, int *y_offs_to_first_frame,
+              int *perf_detect_x, int verbose) {
   int total_num_perf = 0;
   int total_num_frames = 0;
   int x_for_max_frames = 0;
@@ -603,6 +606,8 @@ int find_perf(RAWBUF_T *buf, int *y_offs_to_first_frame, int *perf_detect_x, int
   printf("global: num perfs: %d num frames: %d (at x = %d) median height: %d\n",
          total_num_perf, total_num_frames, x_for_max_frames,
          median_frame_height);
+
+  *median_height = median_frame_height;
 
   /* Use the optimal X to index the frame starts */
   find_perf_with_range(buf, y_offs_to_first_frame, &total_num_perf, &total_num_frames,

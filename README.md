@@ -5,9 +5,11 @@ We never had a decent projector, only a film-shredding original 1932 Kodak doubl
 the perforations. Around 2004 the strips had been laying around for almost 15 years and was it's time do something.
 
 double8scan is a simple C hack that tries to detect the perforation on a scanned double 8 or super 8 strip and spit out the frames as individual jpeg images. You may have to tweak the white and black levels (the switches
-`-b` and `-w`, you can also select what color channel to use with `-c`) and maybe restrict perforation and frame sizes (`-p` and `-f`).
+`-B` and `-W`, you can also select what color channel to use with `-c` - default is Y). If the strip is in really bad shap you may have to set ranges for perforation and frame sizes to help the auto-detection (`-p` and `-f`).
 
-Because the strip may be stretched (or the scanner non-perfect) the frame size must be set by the user, but if no size is given the program will probe and display the median frame heights (evaluated both using the full width of the perf, and the single "best" column the program decided). The frame width is automatically adjusted so a minimum of perforation is visible, hopefully without losing frame information. The output width can be overriden, as well as setting a fixed X offset to start the frames from. Once you've decided on a frame height, this program can batch convert the scanned strips.
+Because the strip may be stretched (or the scanner non-perfect) what the frame size should be is not obvious.
+- If no height is given the program will use the median frame height. It can be overridden (using `-h`), but the frame Y position start will still be the same.
+- The frame width is automatically adjusted so a minimum of perforation is visible, hopefully without losing frame information. The output width can also be overriden (`-w`), as well as setting a fixed X offset to start the frames from (`-X`).
 
 Build using CMake, for instance:
 
