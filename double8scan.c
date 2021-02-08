@@ -185,9 +185,6 @@ int main(int argc, char *argv[]) {
 
   printf("double8scan reading file %s type %s\n", file, film_type == DOUBLE_8 ? "double 8" : "super 8");
 
-  if (height == 0)
-    printf("no frame height given, only probing\n");
-
   imgbuf.scanline = NULL;
   imgbuf.scanstart = NULL;
   imgbuf.buffer = NULL;
