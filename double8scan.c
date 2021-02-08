@@ -36,6 +36,8 @@ typedef struct {
   JSAMPLE *buffer;
 } RAWBUF_T;
 
+#define DOUBLE8SCAN_VERSION "0.5"
+
 /* default defines */
 #define WHITELEVEL 0xe0
 #define BLACKLEVEL 0xc0
@@ -80,6 +82,7 @@ int color_channel = CHAN_Y;
 TYPE_T film_type = DOUBLE_8;
 
 void usage(void) {
+  printf("double8scan version %s\n", DOUBLE8SCAN_VERSION);
   printf("usage: double8scan [options] <infile>\n");
   printf("options:\n");
   printf("       -v             : verbose (-vv for more, etc)\n");
