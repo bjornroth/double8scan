@@ -36,7 +36,7 @@ typedef struct {
   JSAMPLE *buffer;
 } RAWBUF_T;
 
-#define DOUBLE8SCAN_VERSION "0.5.2"
+#define DOUBLE8SCAN_VERSION "0.5.3"
 
 /* default defines */
 #define WHITELEVEL 0xe0
