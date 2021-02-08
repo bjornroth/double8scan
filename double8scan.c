@@ -48,6 +48,7 @@ typedef struct {
 #define MIN_FRAME_HEIGHT_FAC 0.1
 #define MAX_FRAME_HEIGHT_FAC 0.8
 #define FRAME_FRAC_WITH_PERF 0.5
+#define SCAN_START_DIFF_FAC 0.002
 #define PERF_OK_COUNT 5
 #define MAX_FRAMEDIFF 30
 
@@ -318,6 +319,7 @@ int compress_frames(char *filename, RAWBUF_T *buf, int height, int width,
   int last_frame_start = -1;
   int more_frames = 1;
   int scan_start;
+  int last_scan_start = -1;
   char chunkname[255];
 
   cinfo.err = jpeg_std_error(&jerr);
@@ -353,11 +355,21 @@ int compress_frames(char *filename, RAWBUF_T *buf, int height, int width,
     /* store last frame start */
     last_frame_start = y;
 
+    if (verbose)
+      printf("FRAME_START at %d ", y);
+
     /* store scanline start for frame */
-    scan_start = buf->scanstart[y];
+    if (last_scan_start >= 0 && abs(buf->scanstart[y] - last_scan_start) < SCAN_START_DIFF_FAC * width) {
+      last_scan_start = scan_start;
+      scan_start = buf->scanstart[y];
+    } else if (last_scan_start < 0) {
+      scan_start = last_scan_start = buf->scanstart[y];
+    } else if (verbose) {
+      printf("(ignoring xoffs %d, too large diff) ", buf->scanstart[y]);
+    }
 
     if (verbose)
-      printf("FRAME_START at %d, xoffs %d", y, scan_start);
+      printf("xoffs %d", scan_start);
 
     /* create filename */
     sprintf(chunkname, "%s.%03d.jpg", filename, count);
