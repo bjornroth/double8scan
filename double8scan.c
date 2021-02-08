@@ -609,7 +609,7 @@ int find_perf(RAWBUF_T *buf, int *y_offs_to_first_frame, int *perf_detect_x, int
                        &x_for_max_frames, &median_frame_height, x_for_max_frames,
                        x_for_max_frames + 1, verbose);
 
-  printf("x = %d: num perfs: %d num frames: %d , offs to first: %d, median height: %d\n",
+  printf("x = %d: num perfs: %d num frames: %d offs to first: %d, median height: %d\n",
          x_for_max_frames, total_num_perf, total_num_frames, *y_offs_to_first_frame, median_frame_height);
 
   *perf_detect_x = x_for_max_frames;
