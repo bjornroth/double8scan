@@ -36,7 +36,7 @@ typedef struct {
   JSAMPLE *buffer;
 } RAWBUF_T;
 
-#define DOUBLE8SCAN_VERSION "0.5.1"
+#define DOUBLE8SCAN_VERSION "0.5.2"
 
 /* default defines */
 #define WHITELEVEL 0xe0
@@ -415,7 +415,7 @@ int find_perf_with_range(RAWBUF_T *buf, int *y_offs_to_first_frame,
                          int *total_num_perf, int *total_num_frames,
                          int *x_for_max_frames, int *median_frame_height,
                          int from_x, int to_x, int verbose) {
-  int frame_height_hist[max_frame_height];
+  int *frame_height_hist = malloc(sizeof(int) * max_frame_height);
 
   float mean_img_height_sum = 0.0;
   float mean_img_max_height_sum = 0.0;
@@ -431,7 +431,7 @@ int find_perf_with_range(RAWBUF_T *buf, int *y_offs_to_first_frame,
   int xoffs;
   int val;
 
-  memset(frame_height_hist, 0, sizeof(frame_height_hist));
+  memset(frame_height_hist, 0, sizeof(int) * max_frame_height);
 
   while (x < to_x * buf->components) {
     int perfstart = 0;
@@ -587,6 +587,8 @@ int find_perf_with_range(RAWBUF_T *buf, int *y_offs_to_first_frame,
       *median_frame_height = i;
     }
   }
+
+  free(frame_height_hist);
 
   return 0;
 }
